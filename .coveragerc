@@ -1,0 +1,13 @@
+[run]
+branch = True
+source = agentic_economy
+omit =
+    */cli.py
+    */analysis.py
+
+[report]
+fail_under = 80
+show_missing = True
+omit =
+    */cli.py
+    */analysis.py

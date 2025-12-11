@@ -1,0 +1,68 @@
+[project]
+name = "agentic-economy"
+version = "0.1.0"
+description = "Toy agentic economy simulation comparing barter vs money/Exchange with GPT agents."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "openai>=1.55.0",
+    "pydantic>=2.8.0",
+    "python-dotenv>=1.0.1",
+    "pandas>=2.2.2",
+    "matplotlib>=3.9.0",
+]
+
+[project.scripts]
+agentic-economy = "agentic_economy.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.6.0",
+    "black>=24.8.0",
+    "mypy>=1.11.0",
+    "bandit>=1.7.9",
+    "detect-secrets>=1.5.0",
+    "pip-audit>=2.7.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src"]
+
+[tool.ruff.lint]
+extend-select = ["I"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+addopts = "--maxfail=1 --disable-warnings --cov --cov-report=term-missing --cov-config=.coveragerc"
+
+[tool.coverage.run]
+branch = true
+source = ["agentic_economy"]
+omit = [
+    "*/cli.py",
+    "*/analysis.py",
+]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+omit = [
+    "*/cli.py",
+    "*/analysis.py",
+]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unused_configs = true
