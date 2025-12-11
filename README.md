@@ -78,3 +78,16 @@ What this already shows (for GPT-5-mini under tight communication budgets):
 - **Local central planner (no token):** with only simple pairwise swaps, the planner fails at \(N=3\), partially succeeds at \(N=5\), and fails again at \(N=8\); “just adding hierarchy” without a token does not solve the coordination problem.
 
 Taken together, this is exactly the qualitative pattern the theoretical story predicts: under a fixed communication budget, bilateral barter and a naive hierarchy without money struggle more as \(N\) grows, while a star-shaped institution with a token maintains high success with roughly linear coordination load in \(N\).
+
+## Emergent money probe (barter_credit)
+
+To see whether money-like objects emerge endogenously, we ran `barter` vs `barter_credit` at \(N=8\) (3 seeds, round cap 8). Results:
+
+- `barter` success ≈ 0.50 (about 4/8 agents clear on average).
+- `barter_credit` success ≈ 0.54, but credits were almost never used (5 total credit proposals across 3 runs) and **no credit was accepted**, so no shared medium of exchange emerged in this regime.
+
+This is a preliminary negative result: simply allowing mintable IOUs is not enough for money to spontaneously appear without additional credibility or stronger coordination pressure.
+
+## Exchange complexity note
+
+Money/Exchange runs log per‑round exchange traffic and price updates. In the \(N=8\) run, the exchange handled 23 inbound and 23 outbound messages total and prices stayed fixed (no updates), illustrating that coordination is absorbed into \(O(N)\) hub-facing communication in this toy.
