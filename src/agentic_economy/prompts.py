@@ -33,11 +33,57 @@ def barter_system_prompt(agent_name: str, inventory: Dict[str, int], target_good
         "4. Do nothing this round:\n"
         '{"action":"idle"}\n\n'
         "Constraints:\n"
-        "- You may only offer goods you currently have at least 1 unit of.\n"
+        "- You may only offer goods you currently have at least 1 unit of (credits can be issued as above).\n"
         "- You should primarily pursue your target good, but you may accept intermediate trades if they "
         "plausibly help you get closer to the target.\n"
         "- You do not coordinate with other agents out of band. You only use the given protocol.\n"
         "- You are allowed to reason strategically, but you must keep messages short and respect the action format.\n\n"
+        "OUTPUT REQUIREMENTS:\n"
+        "- You MUST output exactly one valid JSON object.\n"
+        "- No comments, no prose, no explanations.\n"
+        '- If you are unsure, choose {"action":"idle"}.\n'
+    )
+
+
+def barter_credit_system_prompt(
+    agent_name: str, inventory: Dict[str, int], target_good: str
+) -> str:
+    return (
+        "You are an autonomous trading agent in a toy barter economy.\n\n"
+        f"- Your name: {agent_name}\n"
+        f"- Your current inventory (map good -> quantity): {_format_json(inventory)}\n"
+        f'- Your goal: end the game holding at least 1 unit of the good "{target_good}".\n\n'
+        "Time proceeds in discrete rounds. In each round, you may take at most ONE action.\n\n"
+        "You can only interact with other agents through a structured message protocol.\n"
+        "You do NOT see the global state. You only see:\n"
+        "- Your own inventory\n"
+        "- Your own target good\n"
+        "- The messages you have sent or received\n\n"
+        "You may choose one of these actions:\n\n"
+        "1. Propose a trade to another agent:\n"
+        '{"action":"propose_trade","to":"<agent_name>","give":"<good_you_offer>",'
+        '"receive":"<good_you_want>"}\n\n'
+        "2. Accept a proposal that was sent to you in some previous round:\n"
+        '{"action":"accept","of_message_id":"<message_id_of_proposal_you_accept>"}\n\n'
+        "3. Reject a proposal that was sent to you:\n"
+        '{"action":"reject","of_message_id":"<message_id_of_proposal_you_reject>"}\n\n'
+        "4. Do nothing this round:\n"
+        '{"action":"idle"}\n\n'
+        "Optional IOUs / credits (enforced as tradable tokens):\n"
+        "- You MAY, if you think it helps coordination, invent short credit/IOU labels (any string not "
+        'starting with "g"). Treat these as extra tradable tokens.\n'
+        "- You can offer a credit label even if you do not currently hold it; doing so issues/mints one "
+        "unit of that credit to the counterparty if they accept.\n"
+        "- Credits can later be traded just like goods. Other agents may or may not accept them.\n\n"
+        "Constraints:\n"
+        "- You may only offer goods you currently have at least 1 unit of.\n"
+        "- You should primarily pursue your target good, but you may accept intermediate trades if they "
+        "plausibly help you get closer to the target.\n"
+        "- You do not coordinate with other agents out of band. You only use the given protocol.\n"
+        "- You can think through a few steps and, if helpful, come up with your own idea for how to "
+        "use IOUs or credits to reduce coordination problems.\n"
+        "- You are allowed to reason strategically, but you must keep messages short and respect the "
+        "action format.\n\n"
         "OUTPUT REQUIREMENTS:\n"
         "- You MUST output exactly one valid JSON object.\n"
         "- No comments, no prose, no explanations.\n"
@@ -62,6 +108,30 @@ def barter_user_prompt(
         f"{_format_json(inventory)}\n\n"
         "Your target good:\n"
         f'"{target_good}"\n\n'
+        "Choose exactly ONE action and output a single JSON object following the schema defined in "
+        "the system prompt."
+    )
+
+
+def barter_credit_user_prompt(
+    round_number: int,
+    recent_messages: List[Dict[str, Any]],
+    inventory: Dict[str, int],
+    target_good: str,
+) -> str:
+    return (
+        f"Round: {round_number}\n\n"
+        "Your recent messages (up to last 10), as a JSON array of objects:\n"
+        f"{_format_json(recent_messages)}\n\n"
+        "Each message object looks like:\n"
+        '{"direction":"incoming|outgoing","from":"<agent_name>","to":"<agent_name>",'
+        '"message_id":"<id>","round":<int>,"payload":{...}}\n\n'
+        "Your current inventory:\n"
+        f"{_format_json(inventory)}\n\n"
+        "Your target good:\n"
+        f'"{target_good}"\n\n'
+        "You may, if you wish, invent credit/IOU labels (non-\"g\" strings) and use them as the `give` or "
+        "`receive` item in a `propose_trade`. Offering a credit you do not hold issues it if accepted.\n\n"
         "Choose exactly ONE action and output a single JSON object following the schema defined in "
         "the system prompt."
     )

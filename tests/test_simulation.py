@@ -4,7 +4,12 @@ import json
 from typing import Any, Dict
 
 from agentic_economy.llm_client import LLMClient
-from agentic_economy.simulation import BarterSimulation, MoneyExchangeSimulation
+from agentic_economy.simulation import (
+    BarterSimulation,
+    BarterWithCreditSimulation,
+    CentralPlannerSimulation,
+    MoneyExchangeSimulation,
+)
 
 
 class DummyLLM:
@@ -135,6 +140,31 @@ def test_barter_run_completes_trade() -> None:
     assert result.inventory_final["A1"].get("g0", 0) == 1
 
 
+def test_barter_credit_run_completes_trade() -> None:
+    script = {
+        "A0": [
+            {"action": "propose_trade", "to": "A1", "give": "g0", "receive": "g1"},
+            {"action": "idle"},
+        ],
+        "A1": [
+            {"action": "idle"},
+            {"action": "accept", "of_message_id": "m0"},
+        ],
+    }
+    sim = BarterWithCreditSimulation(
+        n_agents=2,
+        rounds=2,
+        seed=0,
+        history_limit=5,
+        llm_client=ScriptedBarterLLM(script),  # type: ignore[arg-type]
+        model_name="dummy",
+    )
+    result = sim.run()
+    assert result.successful_agents == 2
+    assert result.inventory_final["A0"].get("g1", 0) == 1
+    assert result.inventory_final["A1"].get("g0", 0) == 1
+
+
 def test_money_exchange_round_trip() -> None:
     llm = ScriptedMoneyLLM()
     sim = MoneyExchangeSimulation(
@@ -151,6 +181,19 @@ def test_money_exchange_round_trip() -> None:
     assert result.exchange_inventory is not None
     assert result.exchange_inventory["g0"] >= 0
     assert result.exchange_inventory["g1"] >= 0
+
+
+def test_central_planner_handles_two_agent_swap() -> None:
+    sim = CentralPlannerSimulation(
+        n_agents=2,
+        rounds=10,
+        seed=0,
+        history_limit=5,
+        llm_client=DummyLLM(),  # type: ignore[arg-type]
+        model_name="dummy",
+    )
+    result = sim.run()
+    assert result.successful_agents == 2
 
 
 def test_extract_json_from_output_text() -> None:

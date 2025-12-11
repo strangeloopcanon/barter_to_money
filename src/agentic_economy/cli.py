@@ -10,7 +10,13 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from .llm_client import LLMClient
-from .simulation import BarterSimulation, BaseSimulation, MoneyExchangeSimulation
+from .simulation import (
+    BarterSimulation,
+    BarterWithCreditSimulation,
+    BaseSimulation,
+    CentralPlannerSimulation,
+    MoneyExchangeSimulation,
+)
 
 DEFAULT_N_VALUES = [3, 5, 7]
 
@@ -43,8 +49,26 @@ def run_experiment(
             llm_client=llm_client,
             model_name=model,
         )
+    elif condition == "barter_credit":
+        simulation = BarterWithCreditSimulation(
+            n_agents=n,
+            rounds=rounds,
+            seed=seed,
+            history_limit=history_limit,
+            llm_client=llm_client,
+            model_name=model,
+        )
     elif condition == "money_exchange":
         simulation = MoneyExchangeSimulation(
+            n_agents=n,
+            rounds=rounds,
+            seed=seed,
+            history_limit=history_limit,
+            llm_client=llm_client,
+            model_name=model,
+        )
+    elif condition == "central_planner":
+        simulation = CentralPlannerSimulation(
             n_agents=n,
             rounds=rounds,
             seed=seed,
@@ -82,7 +106,7 @@ def parse_args() -> argparse.Namespace:
     run_parser.add_argument(
         "--conditions",
         nargs="+",
-        choices=["barter", "money_exchange"],
+        choices=["barter", "barter_credit", "money_exchange", "central_planner"],
         default=["barter", "money_exchange"],
         help="Which conditions to run.",
     )
