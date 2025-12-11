@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import random
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
@@ -58,6 +59,8 @@ class SimulationResult:
     parameters: Dict[str, Any]
     exchange_inventory: Optional[Dict[str, int]] = None
     exchange_money: Optional[float] = None
+    exchange_price_history: Optional[List[Dict[str, float]]] = None
+    exchange_round_metrics: Optional[List[Dict[str, Any]]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -72,6 +75,8 @@ class SimulationResult:
             "parameters": self.parameters,
             "exchange_inventory": self.exchange_inventory,
             "exchange_money": self.exchange_money,
+            "exchange_price_history": self.exchange_price_history,
+            "exchange_round_metrics": self.exchange_round_metrics,
         }
 
     def write_json(self, path: Path) -> None:
@@ -312,6 +317,220 @@ class BarterSimulation(BaseSimulation):
         return True
 
 
+class BarterWithCreditSimulation(BarterSimulation):
+    def run(self) -> SimulationResult:
+        for round_number in range(1, self.rounds + 1):
+            actions: Dict[str, Dict[str, Any]] = {}
+            for agent in self.agents.values():
+                system_prompt = prompts.barter_credit_system_prompt(
+                    agent.name, agent.inventory, agent.target_good
+                )
+                user_prompt = prompts.barter_credit_user_prompt(
+                    round_number,
+                    agent.recent_history(self.history_limit),
+                    agent.inventory,
+                    agent.target_good,
+                )
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ]
+                actions[agent.name] = self.llm_client.complete_json(messages)
+
+            self._apply_barter_actions(actions, round_number)
+            if self._success_count() == self.n_agents:
+                break
+
+        return SimulationResult(
+            condition="barter_credit",
+            n_agents=self.n_agents,
+            seed=self._seed,
+            rounds_run=round_number,
+            messages=self.messages,
+            agents=self._agent_metadata(),
+            inventory_final=self._inventory_snapshot(),
+            successful_agents=self._success_count(),
+            parameters={
+                "rounds": self.rounds,
+                "history_limit": self.history_limit,
+                "model": self.model_name,
+            },
+        )
+
+    def _apply_barter_actions(
+        self, actions: Mapping[str, Dict[str, Any]], round_number: int
+    ) -> None:
+        for sender, action in actions.items():
+            action_name = action.get("action")
+            if action_name == "propose_trade":
+                receiver = action.get("to")
+                give_item = action.get("give")
+                receive_item = action.get("receive")
+                if not receiver or receiver not in self.agents:
+                    continue
+                if not give_item or not receive_item:
+                    continue
+                if give_item in self.goods and self.agents[sender].inventory.get(give_item, 0) <= 0:
+                    continue
+
+                message_id = self._next_message_id()
+                message = MessageLogEntry(
+                    round_number=round_number,
+                    sender=sender,
+                    receiver=receiver,
+                    message_id=message_id,
+                    payload=action,
+                )
+                self._proposals[message_id] = message
+                self._log_message(message)
+            elif action_name == "accept":
+                proposal_id = action.get("of_message_id")
+                self._accept_trade(sender, proposal_id, round_number, action)
+            elif action_name == "reject":
+                proposal_id = action.get("of_message_id")
+                self._reject_trade(sender, proposal_id, round_number, action)
+            else:
+                continue
+
+    def _execute_trade(self, payload: Mapping[str, Any], sender: str, receiver: str) -> bool:
+        give_item = payload.get("give")
+        receive_item = payload.get("receive")
+        if not give_item or not receive_item:
+            return False
+
+        sender_state = self.agents[sender]
+        receiver_state = self.agents[receiver]
+
+        give_is_good = give_item in self.goods
+        if give_is_good and sender_state.inventory.get(give_item, 0) <= 0:
+            return False
+        if receiver_state.inventory.get(receive_item, 0) <= 0:
+            return False
+
+        if give_is_good or sender_state.inventory.get(give_item, 0) > 0:
+            sender_state.inventory[give_item] = sender_state.inventory.get(give_item, 0) - 1
+
+        receiver_state.inventory[give_item] = receiver_state.inventory.get(give_item, 0) + 1
+
+        receiver_state.inventory[receive_item] -= 1
+        sender_state.inventory[receive_item] = sender_state.inventory.get(receive_item, 0) + 1
+
+        return True
+
+
+class CentralPlannerSimulation(BaseSimulation):
+    def __init__(
+        self,
+        n_agents: int,
+        rounds: int,
+        seed: int,
+        history_limit: int,
+        llm_client: LLMClient,
+        model_name: str,
+    ):
+        super().__init__(n_agents, rounds, seed, history_limit, llm_client, model_name)
+        target_indices = self._derangement()
+        for idx in range(n_agents):
+            agent_name = f"A{idx}"
+            endowment = self.goods[idx]
+            target = self.goods[target_indices[idx]]
+            self.agents[agent_name] = AgentState(
+                name=agent_name, inventory={endowment: 1}, target_good=target
+            )
+
+    def run(self) -> SimulationResult:
+        planner_name = "Planner"
+        last_round = 0
+
+        for round_number in range(1, self.rounds + 1):
+            last_round = round_number
+            for agent in self.agents.values():
+                report_message = MessageLogEntry(
+                    round_number=round_number,
+                    sender=agent.name,
+                    receiver=planner_name,
+                    message_id=self._next_message_id(),
+                    payload={
+                        "action": "report",
+                        "inventory": dict(agent.inventory),
+                        "target_good": agent.target_good,
+                    },
+                )
+                self._log_message(report_message)
+
+            trades = self._planner_pairwise_trades(round_number, planner_name)
+            if trades == 0 and self._success_count() == self.n_agents:
+                break
+
+        for agent in self.agents.values():
+            assignment_message = MessageLogEntry(
+                round_number=last_round,
+                sender=planner_name,
+                receiver=agent.name,
+                message_id=self._next_message_id(),
+                payload={"action": "assignment", "inventory": dict(agent.inventory)},
+            )
+            self._log_message(assignment_message)
+
+        return SimulationResult(
+            condition="central_planner",
+            n_agents=self.n_agents,
+            seed=self._seed,
+            rounds_run=last_round,
+            messages=self.messages,
+            agents=self._agent_metadata(),
+            inventory_final=self._inventory_snapshot(),
+            successful_agents=self._success_count(),
+            parameters={
+                "rounds": self.rounds,
+                "history_limit": self.history_limit,
+                "model": self.model_name,
+            },
+        )
+
+    def _planner_pairwise_trades(self, round_number: int, planner_name: str) -> int:
+        trades_done = 0
+        agent_names = list(self.agents.keys())
+        self.random.shuffle(agent_names)
+
+        for idx, name_a in enumerate(agent_names):
+            state_a = self.agents[name_a]
+            good_a = next((g for g, qty in state_a.inventory.items() if qty > 0), None)
+            if not good_a:
+                continue
+            for name_b in agent_names[idx + 1 :]:
+                state_b = self.agents[name_b]
+                good_b = next((g for g, qty in state_b.inventory.items() if qty > 0), None)
+                if not good_b:
+                    continue
+                if state_a.target_good != good_b or state_b.target_good != good_a:
+                    continue
+
+                state_a.inventory[good_a] -= 1
+                state_a.inventory[good_b] = state_a.inventory.get(good_b, 0) + 1
+                state_b.inventory[good_b] -= 1
+                state_b.inventory[good_a] = state_b.inventory.get(good_a, 0) + 1
+                trades_done += 1
+
+                payload = {
+                    "action": "swap",
+                    "agents": [name_a, name_b],
+                    "give": {name_a: good_a, name_b: good_b},
+                    "receive": {name_a: good_b, name_b: good_a},
+                }
+                for receiver in (name_a, name_b):
+                    swap_message = MessageLogEntry(
+                        round_number=round_number,
+                        sender=planner_name,
+                        receiver=receiver,
+                        message_id=self._next_message_id(),
+                        payload=payload,
+                    )
+                    self._log_message(swap_message)
+
+        return trades_done
+
+
 class MoneyExchangeSimulation(BaseSimulation):
     def __init__(
         self,
@@ -341,12 +560,48 @@ class MoneyExchangeSimulation(BaseSimulation):
         }
         self.exchange_money: float = max(n_agents * starting_money * 3, n_agents * 2.0)
         self.prices: Dict[str, float] = {good: 1.0 for good in self.goods}
+        self.price_history: List[Dict[str, float]] = []
+        self.exchange_round_metrics: List[Dict[str, Any]] = []
 
     def run(self) -> SimulationResult:
+        last_round = 0
         for round_number in range(1, self.rounds + 1):
+            last_round = round_number
+            previous_prices = dict(self.prices)
             inbox = self._collect_exchange_inbox(round_number)
+            inbox_actions = Counter()
+            for entry in inbox:
+                action = entry.get("payload", {}).get("action")
+                if action:
+                    inbox_actions[action] += 1
+
+            outbox_actions: Counter[str] = Counter()
             if inbox:
-                self._process_exchange_round(inbox, round_number)
+                outbox_actions = Counter(self._process_exchange_round(inbox, round_number))
+
+            price_updates: Dict[str, float] = {}
+            total_abs_change = 0.0
+            for good, price in self.prices.items():
+                old_price = previous_prices.get(good, price)
+                if price != old_price:
+                    delta = float(price - old_price)
+                    price_updates[good] = delta
+                    total_abs_change += abs(delta)
+
+            self.exchange_round_metrics.append(
+                {
+                    "round": round_number,
+                    "inbox_total": len(inbox),
+                    "inbox_by_action": dict(inbox_actions),
+                    "outbox_total": sum(outbox_actions.values()),
+                    "outbox_by_action": dict(outbox_actions),
+                    "price_update_count": len(price_updates),
+                    "price_total_abs_change": total_abs_change,
+                    "price_updates": price_updates,
+                }
+            )
+            self.price_history.append(dict(self.prices))
+
             if self._success_count() == self.n_agents:
                 break
 
@@ -354,7 +609,7 @@ class MoneyExchangeSimulation(BaseSimulation):
             condition="money_exchange",
             n_agents=self.n_agents,
             seed=self._seed,
-            rounds_run=round_number,
+            rounds_run=last_round,
             messages=self.messages,
             agents=self._agent_metadata(),
             inventory_final=self._inventory_snapshot(),
@@ -367,6 +622,8 @@ class MoneyExchangeSimulation(BaseSimulation):
             },
             exchange_inventory=dict(self.exchange_inventory),
             exchange_money=self.exchange_money,
+            exchange_price_history=self.price_history,
+            exchange_round_metrics=self.exchange_round_metrics,
         )
 
     def _collect_exchange_inbox(self, round_number: int) -> List[Dict[str, Any]]:
@@ -402,7 +659,9 @@ class MoneyExchangeSimulation(BaseSimulation):
             self._log_message(message)
         return inbox
 
-    def _process_exchange_round(self, inbox: List[Dict[str, Any]], round_number: int) -> None:
+    def _process_exchange_round(
+        self, inbox: List[Dict[str, Any]], round_number: int
+    ) -> Dict[str, int]:
         aggregate_state = self._aggregate_state()
         system_prompt = prompts.exchange_system_prompt()
         user_prompt = prompts.exchange_user_prompt(
@@ -417,10 +676,14 @@ class MoneyExchangeSimulation(BaseSimulation):
         if len(outbox) != len(inbox):
             outbox = self._pad_outbox(outbox, inbox)
         inbox_lookup = {item["message_id"]: item for item in inbox}
+        outbox_actions: Counter[str] = Counter()
 
         for entry in outbox:
             message_id = entry.get("to_message_id")
             response_payload = entry.get("response", {})
+            action_name = response_payload.get("action")
+            if action_name:
+                outbox_actions[action_name] += 1
             inbox_entry = inbox_lookup.get(message_id)
             if not inbox_entry:
                 continue
@@ -434,6 +697,7 @@ class MoneyExchangeSimulation(BaseSimulation):
             )
             self._log_message(agent_message)
             self._apply_exchange_response(agent_name, inbox_entry["payload"], response_payload)
+        return dict(outbox_actions)
 
     def _apply_exchange_response(
         self, agent_name: str, request_payload: Dict[str, Any], response_payload: Dict[str, Any]
