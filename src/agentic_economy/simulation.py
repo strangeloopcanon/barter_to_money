@@ -61,6 +61,8 @@ class SimulationResult:
     exchange_money: Optional[float] = None
     exchange_price_history: Optional[List[Dict[str, float]]] = None
     exchange_round_metrics: Optional[List[Dict[str, Any]]] = None
+    events: Optional[List[Dict[str, Any]]] = None
+    behavior_summary: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -77,6 +79,8 @@ class SimulationResult:
             "exchange_money": self.exchange_money,
             "exchange_price_history": self.exchange_price_history,
             "exchange_round_metrics": self.exchange_round_metrics,
+            "events": self.events,
+            "behavior_summary": self.behavior_summary,
         }
 
     def write_json(self, path: Path) -> None:
@@ -108,11 +112,66 @@ class BaseSimulation:
         self._proposals: Dict[str, MessageLogEntry] = {}
         self._message_counter = 0
         self._seed = seed
+        self.events: List[Dict[str, Any]] = []
 
     def _next_message_id(self) -> str:
         message_id = f"m{self._message_counter}"
         self._message_counter += 1
         return message_id
+
+    def _log_event(self, event: str, **fields: Any) -> None:
+        record = {"event": event, **fields}
+        self.events.append(record)
+
+    def _log_agent_action(
+        self, round_number: int, agent_state: AgentState, action: Mapping[str, Any]
+    ) -> None:
+        self._log_event(
+            "agent_action",
+            round=round_number,
+            agent=agent_state.name,
+            action=dict(action),
+            inventory=dict(agent_state.inventory),
+            target_good=agent_state.target_good,
+            money=agent_state.money,
+        )
+
+    def _behavior_summary(self) -> Dict[str, Any]:
+        summary: Dict[str, Any] = {}
+        for agent_name in self.agents:
+            proposals = [
+                msg
+                for msg in self.messages
+                if msg.sender == agent_name and msg.payload.get("action") == "propose_trade"
+            ]
+            proposal_terms = [
+                (
+                    msg.payload.get("to"),
+                    msg.payload.get("give"),
+                    msg.payload.get("receive"),
+                )
+                for msg in proposals
+            ]
+            unique_partners = len({term[0] for term in proposal_terms if term[0]})
+            repeated_identical = len(proposal_terms) - len(set(proposal_terms))
+            send_messages = [
+                msg
+                for msg in self.messages
+                if msg.sender == agent_name and msg.payload.get("action") == "send_message"
+            ]
+            invalid_actions = [
+                ev
+                for ev in self.events
+                if ev.get("event") == "invalid_action" and ev.get("agent") == agent_name
+            ]
+            summary[agent_name] = {
+                "proposals": len(proposals),
+                "unique_partners": unique_partners,
+                "repeated_identical_proposals": repeated_identical,
+                "messages_sent": len(send_messages),
+                "invalid_actions": len(invalid_actions),
+            }
+        return summary
 
     def _record_history(self, agent_name: str, direction: str, message: MessageLogEntry) -> None:
         entry = {
@@ -199,7 +258,9 @@ class BarterSimulation(BaseSimulation):
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ]
-                actions[agent.name] = self.llm_client.complete_json(messages)
+                action = self.llm_client.complete_json(messages)
+                self._log_agent_action(round_number, agent, action)
+                actions[agent.name] = action
 
             self._apply_barter_actions(actions, round_number)
             if self._success_count() == self.n_agents:
@@ -219,6 +280,8 @@ class BarterSimulation(BaseSimulation):
                 "history_limit": self.history_limit,
                 "model": self.model_name,
             },
+            events=self.events,
+            behavior_summary=self._behavior_summary(),
         )
 
     def _apply_barter_actions(
@@ -226,15 +289,71 @@ class BarterSimulation(BaseSimulation):
     ) -> None:
         for sender, action in actions.items():
             action_name = action.get("action")
+            if action_name == "send_message":
+                receiver = action.get("to")
+                message_text = action.get("message")
+                if (
+                    not receiver
+                    or receiver not in self.agents
+                    or receiver == sender
+                    or not isinstance(message_text, str)
+                    or not message_text.strip()
+                ):
+                    self._log_event(
+                        "invalid_action",
+                        round=round_number,
+                        agent=sender,
+                        reason="invalid_send_message",
+                        action=action,
+                    )
+                    continue
+                message_id = self._next_message_id()
+                message = MessageLogEntry(
+                    round_number=round_number,
+                    sender=sender,
+                    receiver=receiver,
+                    message_id=message_id,
+                    payload=action,
+                )
+                self._log_message(message)
+                self._log_event(
+                    "message_sent",
+                    round=round_number,
+                    sender=sender,
+                    receiver=receiver,
+                    message_id=message_id,
+                )
+                continue
             if action_name == "propose_trade":
                 receiver = action.get("to")
                 give_good = action.get("give")
                 receive_good = action.get("receive")
                 if not receiver or receiver not in self.agents:
+                    self._log_event(
+                        "invalid_action",
+                        round=round_number,
+                        agent=sender,
+                        reason="invalid_receiver",
+                        action=action,
+                    )
                     continue
                 if not give_good or not receive_good:
+                    self._log_event(
+                        "invalid_action",
+                        round=round_number,
+                        agent=sender,
+                        reason="missing_trade_fields",
+                        action=action,
+                    )
                     continue
                 if self.agents[sender].inventory.get(give_good, 0) <= 0:
+                    self._log_event(
+                        "invalid_action",
+                        round=round_number,
+                        agent=sender,
+                        reason="insufficient_inventory",
+                        action=action,
+                    )
                     continue
                 message_id = self._next_message_id()
                 message = MessageLogEntry(
@@ -246,6 +365,15 @@ class BarterSimulation(BaseSimulation):
                 )
                 self._proposals[message_id] = message
                 self._log_message(message)
+                self._log_event(
+                    "proposal_made",
+                    round=round_number,
+                    sender=sender,
+                    receiver=receiver,
+                    give=give_good,
+                    receive=receive_good,
+                    message_id=message_id,
+                )
             elif action_name == "accept":
                 proposal_id = action.get("of_message_id")
                 self._accept_trade(sender, proposal_id, round_number, action)
@@ -253,19 +381,70 @@ class BarterSimulation(BaseSimulation):
                 proposal_id = action.get("of_message_id")
                 self._reject_trade(sender, proposal_id, round_number, action)
             else:
+                if action_name != "idle":
+                    self._log_event(
+                        "invalid_action",
+                        round=round_number,
+                        agent=sender,
+                        reason="unknown_action",
+                        action=action,
+                    )
                 continue
 
     def _accept_trade(
         self, accepter: str, proposal_id: Optional[str], round_number: int, action: Dict[str, Any]
     ) -> None:
-        if not proposal_id or proposal_id not in self._proposals:
+        if not proposal_id:
+            self._log_event(
+                "invalid_action",
+                round=round_number,
+                agent=accepter,
+                reason="missing_proposal_id",
+                action=action,
+            )
+            return
+        if proposal_id not in self._proposals:
+            self._log_event(
+                "invalid_action",
+                round=round_number,
+                agent=accepter,
+                reason="unknown_proposal_id",
+                action=action,
+                proposal_id=proposal_id,
+            )
             return
         proposal = self._proposals.pop(proposal_id)
         if proposal.receiver != accepter:
+            self._log_event(
+                "invalid_action",
+                round=round_number,
+                agent=accepter,
+                reason="not_intended_receiver",
+                action=action,
+                proposal_id=proposal_id,
+            )
             return
         executed = self._execute_trade(proposal.payload, proposal.sender, accepter)
         if not executed:
+            self._log_event(
+                "trade_failed",
+                round=round_number,
+                sender=proposal.sender,
+                receiver=accepter,
+                proposal_id=proposal_id,
+                payload=dict(proposal.payload),
+            )
             return
+
+        self._log_event(
+            "trade_executed",
+            round=round_number,
+            sender=proposal.sender,
+            receiver=accepter,
+            give=proposal.payload.get("give"),
+            receive=proposal.payload.get("receive"),
+            proposal_id=proposal_id,
+        )
 
         acceptance_message = MessageLogEntry(
             round_number=round_number,
@@ -279,11 +458,44 @@ class BarterSimulation(BaseSimulation):
     def _reject_trade(
         self, rejecter: str, proposal_id: Optional[str], round_number: int, action: Dict[str, Any]
     ) -> None:
-        if not proposal_id or proposal_id not in self._proposals:
+        if not proposal_id:
+            self._log_event(
+                "invalid_action",
+                round=round_number,
+                agent=rejecter,
+                reason="missing_proposal_id",
+                action=action,
+            )
+            return
+        if proposal_id not in self._proposals:
+            self._log_event(
+                "invalid_action",
+                round=round_number,
+                agent=rejecter,
+                reason="unknown_proposal_id",
+                action=action,
+                proposal_id=proposal_id,
+            )
             return
         proposal = self._proposals.pop(proposal_id)
         if proposal.receiver != rejecter:
+            self._log_event(
+                "invalid_action",
+                round=round_number,
+                agent=rejecter,
+                reason="not_intended_receiver",
+                action=action,
+                proposal_id=proposal_id,
+            )
             return
+
+        self._log_event(
+            "proposal_rejected",
+            round=round_number,
+            sender=proposal.sender,
+            receiver=rejecter,
+            proposal_id=proposal_id,
+        )
 
         rejection_message = MessageLogEntry(
             round_number=round_number,
@@ -335,7 +547,9 @@ class BarterWithCreditSimulation(BarterSimulation):
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ]
-                actions[agent.name] = self.llm_client.complete_json(messages)
+                action = self.llm_client.complete_json(messages)
+                self._log_agent_action(round_number, agent, action)
+                actions[agent.name] = action
 
             self._apply_barter_actions(actions, round_number)
             if self._success_count() == self.n_agents:
@@ -355,6 +569,8 @@ class BarterWithCreditSimulation(BarterSimulation):
                 "history_limit": self.history_limit,
                 "model": self.model_name,
             },
+            events=self.events,
+            behavior_summary=self._behavior_summary(),
         )
 
     def _apply_barter_actions(
@@ -362,15 +578,71 @@ class BarterWithCreditSimulation(BarterSimulation):
     ) -> None:
         for sender, action in actions.items():
             action_name = action.get("action")
+            if action_name == "send_message":
+                receiver = action.get("to")
+                message_text = action.get("message")
+                if (
+                    not receiver
+                    or receiver not in self.agents
+                    or receiver == sender
+                    or not isinstance(message_text, str)
+                    or not message_text.strip()
+                ):
+                    self._log_event(
+                        "invalid_action",
+                        round=round_number,
+                        agent=sender,
+                        reason="invalid_send_message",
+                        action=action,
+                    )
+                    continue
+                message_id = self._next_message_id()
+                message = MessageLogEntry(
+                    round_number=round_number,
+                    sender=sender,
+                    receiver=receiver,
+                    message_id=message_id,
+                    payload=action,
+                )
+                self._log_message(message)
+                self._log_event(
+                    "message_sent",
+                    round=round_number,
+                    sender=sender,
+                    receiver=receiver,
+                    message_id=message_id,
+                )
+                continue
             if action_name == "propose_trade":
                 receiver = action.get("to")
                 give_item = action.get("give")
                 receive_item = action.get("receive")
                 if not receiver or receiver not in self.agents:
+                    self._log_event(
+                        "invalid_action",
+                        round=round_number,
+                        agent=sender,
+                        reason="invalid_receiver",
+                        action=action,
+                    )
                     continue
                 if not give_item or not receive_item:
+                    self._log_event(
+                        "invalid_action",
+                        round=round_number,
+                        agent=sender,
+                        reason="missing_trade_fields",
+                        action=action,
+                    )
                     continue
                 if give_item in self.goods and self.agents[sender].inventory.get(give_item, 0) <= 0:
+                    self._log_event(
+                        "invalid_action",
+                        round=round_number,
+                        agent=sender,
+                        reason="insufficient_inventory",
+                        action=action,
+                    )
                     continue
 
                 message_id = self._next_message_id()
@@ -383,6 +655,15 @@ class BarterWithCreditSimulation(BarterSimulation):
                 )
                 self._proposals[message_id] = message
                 self._log_message(message)
+                self._log_event(
+                    "proposal_made",
+                    round=round_number,
+                    sender=sender,
+                    receiver=receiver,
+                    give=give_item,
+                    receive=receive_item,
+                    message_id=message_id,
+                )
             elif action_name == "accept":
                 proposal_id = action.get("of_message_id")
                 self._accept_trade(sender, proposal_id, round_number, action)
@@ -390,7 +671,93 @@ class BarterWithCreditSimulation(BarterSimulation):
                 proposal_id = action.get("of_message_id")
                 self._reject_trade(sender, proposal_id, round_number, action)
             else:
+                if action_name != "idle":
+                    self._log_event(
+                        "invalid_action",
+                        round=round_number,
+                        agent=sender,
+                        reason="unknown_action",
+                        action=action,
+                    )
                 continue
+
+    def _accept_trade(
+        self, accepter: str, proposal_id: Optional[str], round_number: int, action: Dict[str, Any]
+    ) -> None:
+        if not proposal_id:
+            self._log_event(
+                "invalid_action",
+                round=round_number,
+                agent=accepter,
+                reason="missing_proposal_id",
+                action=action,
+            )
+            return
+        if proposal_id not in self._proposals:
+            self._log_event(
+                "invalid_action",
+                round=round_number,
+                agent=accepter,
+                reason="unknown_proposal_id",
+                action=action,
+                proposal_id=proposal_id,
+            )
+            return
+        proposal = self._proposals.pop(proposal_id)
+        if proposal.receiver != accepter:
+            self._log_event(
+                "invalid_action",
+                round=round_number,
+                agent=accepter,
+                reason="not_intended_receiver",
+                action=action,
+                proposal_id=proposal_id,
+            )
+            return
+
+        give_item = proposal.payload.get("give")
+        if give_item and give_item not in self.goods:
+            issuer_state = self.agents[proposal.sender]
+            if issuer_state.inventory.get(give_item, 0) <= 0:
+                self._log_event(
+                    "credit_issued",
+                    round=round_number,
+                    issuer=proposal.sender,
+                    receiver=accepter,
+                    label=give_item,
+                    proposal_id=proposal_id,
+                )
+
+        executed = self._execute_trade(proposal.payload, proposal.sender, accepter)
+        if not executed:
+            self._log_event(
+                "trade_failed",
+                round=round_number,
+                sender=proposal.sender,
+                receiver=accepter,
+                proposal_id=proposal_id,
+                payload=dict(proposal.payload),
+            )
+            return
+
+        self._log_event(
+            "trade_executed",
+            round=round_number,
+            sender=proposal.sender,
+            receiver=accepter,
+            give=proposal.payload.get("give"),
+            receive=proposal.payload.get("receive"),
+            proposal_id=proposal_id,
+        )
+
+        acceptance_message = MessageLogEntry(
+            round_number=round_number,
+            sender=accepter,
+            receiver=proposal.sender,
+            message_id=self._next_message_id(),
+            payload=action,
+        )
+        self._log_message(acceptance_message)
 
     def _execute_trade(self, payload: Mapping[str, Any], sender: str, receiver: str) -> bool:
         give_item = payload.get("give")
@@ -416,6 +783,96 @@ class BarterWithCreditSimulation(BarterSimulation):
         sender_state.inventory[receive_item] = sender_state.inventory.get(receive_item, 0) + 1
 
         return True
+
+
+class BarterChatSimulation(BarterSimulation):
+    def run(self) -> SimulationResult:
+        for round_number in range(1, self.rounds + 1):
+            actions: Dict[str, Dict[str, Any]] = {}
+            for agent in self.agents.values():
+                system_prompt = prompts.barter_chat_system_prompt(
+                    agent.name, agent.inventory, agent.target_good
+                )
+                user_prompt = prompts.barter_chat_user_prompt(
+                    round_number,
+                    agent.recent_history(self.history_limit),
+                    agent.inventory,
+                    agent.target_good,
+                )
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ]
+                action = self.llm_client.complete_json(messages)
+                self._log_agent_action(round_number, agent, action)
+                actions[agent.name] = action
+
+            self._apply_barter_actions(actions, round_number)
+            if self._success_count() == self.n_agents:
+                break
+
+        return SimulationResult(
+            condition="barter_chat",
+            n_agents=self.n_agents,
+            seed=self._seed,
+            rounds_run=round_number,
+            messages=self.messages,
+            agents=self._agent_metadata(),
+            inventory_final=self._inventory_snapshot(),
+            successful_agents=self._success_count(),
+            parameters={
+                "rounds": self.rounds,
+                "history_limit": self.history_limit,
+                "model": self.model_name,
+            },
+            events=self.events,
+            behavior_summary=self._behavior_summary(),
+        )
+
+
+class BarterChatCreditSimulation(BarterWithCreditSimulation):
+    def run(self) -> SimulationResult:
+        for round_number in range(1, self.rounds + 1):
+            actions: Dict[str, Dict[str, Any]] = {}
+            for agent in self.agents.values():
+                system_prompt = prompts.barter_chat_credit_system_prompt(
+                    agent.name, agent.inventory, agent.target_good
+                )
+                user_prompt = prompts.barter_chat_credit_user_prompt(
+                    round_number,
+                    agent.recent_history(self.history_limit),
+                    agent.inventory,
+                    agent.target_good,
+                )
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ]
+                action = self.llm_client.complete_json(messages)
+                self._log_agent_action(round_number, agent, action)
+                actions[agent.name] = action
+
+            self._apply_barter_actions(actions, round_number)
+            if self._success_count() == self.n_agents:
+                break
+
+        return SimulationResult(
+            condition="barter_chat_credit",
+            n_agents=self.n_agents,
+            seed=self._seed,
+            rounds_run=round_number,
+            messages=self.messages,
+            agents=self._agent_metadata(),
+            inventory_final=self._inventory_snapshot(),
+            successful_agents=self._success_count(),
+            parameters={
+                "rounds": self.rounds,
+                "history_limit": self.history_limit,
+                "model": self.model_name,
+            },
+            events=self.events,
+            behavior_summary=self._behavior_summary(),
+        )
 
 
 class CentralPlannerSimulation(BaseSimulation):
@@ -486,6 +943,8 @@ class CentralPlannerSimulation(BaseSimulation):
                 "history_limit": self.history_limit,
                 "model": self.model_name,
             },
+            events=self.events,
+            behavior_summary=self._behavior_summary(),
         )
 
     def _planner_pairwise_trades(self, round_number: int, planner_name: str) -> int:
@@ -569,7 +1028,7 @@ class MoneyExchangeSimulation(BaseSimulation):
             last_round = round_number
             previous_prices = dict(self.prices)
             inbox = self._collect_exchange_inbox(round_number)
-            inbox_actions = Counter()
+            inbox_actions: Counter[str] = Counter()
             for entry in inbox:
                 action = entry.get("payload", {}).get("action")
                 if action:
@@ -624,6 +1083,8 @@ class MoneyExchangeSimulation(BaseSimulation):
             exchange_money=self.exchange_money,
             exchange_price_history=self.price_history,
             exchange_round_metrics=self.exchange_round_metrics,
+            events=self.events,
+            behavior_summary=self._behavior_summary(),
         )
 
     def _collect_exchange_inbox(self, round_number: int) -> List[Dict[str, Any]]:
@@ -644,6 +1105,7 @@ class MoneyExchangeSimulation(BaseSimulation):
                 {"role": "user", "content": user_prompt},
             ]
             action = self.llm_client.complete_json(messages)
+            self._log_agent_action(round_number, agent, action)
             if action.get("action") == "idle":
                 continue
 
@@ -672,8 +1134,15 @@ class MoneyExchangeSimulation(BaseSimulation):
             {"role": "user", "content": user_prompt},
         ]
         response = self.llm_client.complete_json(messages)
+        self._log_event("exchange_action", round=round_number, response=response)
         outbox = response.get("outbox", [])
         if len(outbox) != len(inbox):
+            self._log_event(
+                "exchange_outbox_padded",
+                round=round_number,
+                inbox_len=len(inbox),
+                outbox_len=len(outbox),
+            )
             outbox = self._pad_outbox(outbox, inbox)
         inbox_lookup = {item["message_id"]: item for item in inbox}
         outbox_actions: Counter[str] = Counter()

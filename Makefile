@@ -11,10 +11,10 @@ setup: ## Install project and dev dependencies via uv
 bootstrap: setup ## Alias for setup to match interface contract wording
 
 format: ## Auto-format code
-	$(UV) run black src tests
+	$(UV) run python -m black src tests
 
 format-check: ## Check formatting without modifying files
-	$(UV) run black --check src tests
+	$(UV) run python -m black --check src tests
 
 lint: ## Ruff lint
 	$(UV) run ruff check src tests
@@ -37,7 +37,7 @@ secrets: ## Detect secrets, creating baseline if missing
 check: format-check lint types security secrets ## Format check, lint, types, security, secrets
 
 test: ## Run tests with coverage
-	$(UV) run pytest
+	$(UV) run python -m pytest
 
 deps-audit: ## Advisory dependency audit
 	$(UV) run pip-audit

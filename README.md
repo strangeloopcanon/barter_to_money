@@ -46,38 +46,43 @@ We run several institutional variants over the *same* agent population and prefe
 
 4) **Barter with credits (experimental)**: barter plus mintable/transferable IOU labels (any non‑`g*` string) that can circulate as tokens.
 
+5) **Barter with chat (experimental)**: like barter, but agents may send short free‑text coordination messages via `send_message` in addition to trade actions.
+
+6) **Barter with chat + credits (experimental)**: chat-enabled barter plus mintable credits. This is the intended setting for stronger “emergent money / reputation” probes.
+
 Across conditions, agents are identical GPT‑5‑mini models; only the institution changes.
 
 ### Metrics
 
 Per run we track: `success_rate` (agents reaching targets), `rounds_run` (to clear or cap), and basic communication volume (`total_messages`, `unique_pairs`). Money/Exchange runs also log per‑round exchange traffic and price updates.
 
-## Empirical test (GPT-5-mini, small N)
+Run logs now also include:
+- `events`: structured per‑round instrumentation of raw agent actions (including invalid/hallucinated actions), proposals, trades, credit issuance, and chat messages.
+- `behavior_summary`: per‑agent counts of proposals, unique partners, repeated identical proposals, chat messages sent, and invalid actions.
 
-To probe the claim above, we run GPT-5-mini agents under the three main institutions (barter, money/Exchange, local central planner) for small $N$, tight round caps, and a handful of seeds. The table below summarizes the `gpt-5-mini` runs in `runs/`, `runs_5mini_smoke/`, `runs_5mini_full/`, and `runs_5mini_full_seed1/`:
+## Empirical test (GPT-5-mini, core sweep)
 
-- Round caps: 6 or 8 as noted.
-- All rows below use the same simulation code; only institution, $N$, and seeds differ.
+To probe the core claim above without overfitting to any single random economy, we reran the two key institutions (barter vs money/Exchange) on **two independent economies** (seeds 0 and 1) across a small $N$ sweep under a fixed round cap $R=8$.
 
-| Condition           | N | # runs | Round cap (typical) | Success rate (avg) | Avg rounds run |
-|---------------------|---|--------|---------------------|--------------------|----------------|
-| Barter              | 3 | 6      | 6–8                 | 1.00               | ≈4.3           |
-| Barter              | 5 | 2      | 6–8                 | 0.80               | ≈5.5           |
-| Barter              | 8 | 2      | 8                   | 0.44               | 8.0            |
-| Money/Exchange      | 3 | 2      | 6–8                 | 1.00               | ≈3.5           |
-| Money/Exchange      | 5 | 1      | 6                   | 1.00               | 4.0            |
-| Money/Exchange      | 8 | 1      | 8                   | 1.00               | 4.0            |
-| Central planner     | 3 | 1      | 6                   | 0.00               | 6.0            |
-| Central planner     | 5 | 1      | 6                   | 0.40               | 6.0            |
-| Central planner     | 8 | 1      | 8                   | 0.00               | 8.0            |
+| Condition      | N  | # runs | Round cap | Success rate (avg) | Avg rounds run |
+|----------------|----|--------|-----------|--------------------|----------------|
+| Barter         | 3  | 2      | 8         | 0.67               | 6.5            |
+| Barter         | 5  | 2      | 8         | 0.80               | 6.5            |
+| Barter         | 8  | 2      | 8         | 0.63               | 8.0            |
+| Barter         | 10 | 2      | 8         | 0.65               | 8.0            |
+| Barter         | 12 | 2      | 8         | 0.42               | 8.0            |
+| Money/Exchange | 3  | 2      | 8         | 1.00               | 3.5            |
+| Money/Exchange | 5  | 2      | 8         | 1.00               | 3.5            |
+| Money/Exchange | 8  | 2      | 8         | 1.00               | 3.5            |
+| Money/Exchange | 10 | 2      | 8         | 1.00               | 4.0            |
+| Money/Exchange | 12 | 2      | 8         | 1.00               | 4.0            |
 
-What this already shows (for GPT-5-mini under tight communication budgets):
+What this shows (current code, GPT‑5‑mini, fixed communication budget):
 
-- **Barter:** success is high at $N=3$, but drops by $N=5$ and further by $N=8$, with runs typically hitting the round cap at higher $N$.
-- **Money/Exchange:** success stays at 1.0 for $N=3,5,8$, with average rounds essentially flat in $N$ (≈3–4); the communication graph stays star-shaped around the hub.
-- **Local central planner (no token):** with only simple pairwise swaps, the planner fails at $N=3$, partially succeeds at $N=5$, and fails again at $N=8$; “just adding hierarchy” without a token does not solve the coordination problem.
+- **Barter:** success is already sensitive to the economy at $N=3$ and does not scale: by $N=12$ fewer than half the agents clear on average and runs hit the round cap.
+- **Money/Exchange:** clears at 1.0 for all tested $N$ with roughly constant rounds (≈3–4) and linear hub‑facing communication.
 
-Taken together, this is exactly the qualitative pattern the theoretical story predicts: under a fixed communication budget, bilateral barter and a naive hierarchy without money struggle more as $N$ grows, while a star-shaped institution with a token maintains high success with roughly linear coordination load in $N$.
+This is the qualitative pattern predicted by the communication‑complexity sketch: under fixed per‑agent communication, bilateral barter fails with high probability as $N$ grows, while a star‑shaped institution with a fungible token maintains high clearing probability.
 
 ## Emergent money probe (barter_credit)
 
@@ -87,6 +92,8 @@ To see whether money-like objects emerge endogenously, we ran `barter` vs `barte
 - `barter_credit` success ≈ 0.54, but credits were almost never used (5 total credit proposals across 3 runs) and **no credit was accepted**, so no shared medium of exchange emerged in this regime.
 
 This is a preliminary negative result: simply allowing mintable IOUs is not enough for money to spontaneously appear without additional credibility or stronger coordination pressure.
+
+The new `barter_chat_credit` condition is meant to re-test this with an explicit coordination channel, so agents can negotiate why a credit or a particular good should be treated as a medium of exchange.
 
 ## Exchange complexity note
 
