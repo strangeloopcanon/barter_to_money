@@ -93,7 +93,16 @@ To see whether money-like objects emerge endogenously, we ran `barter` vs `barte
 
 This is a preliminary negative result: simply allowing mintable IOUs is not enough for money to spontaneously appear without additional credibility or stronger coordination pressure.
 
-The new `barter_chat_credit` condition is meant to re-test this with an explicit coordination channel, so agents can negotiate why a credit or a particular good should be treated as a medium of exchange.
+### Retest with chat + credits (barter_chat_credit)
+
+We reran the credits condition with an explicit coordination channel (`send_message`) so agents can negotiate credit semantics.
+
+At $N=8$ (2 seeds, round cap 12), comparing `barter_credit` vs `barter_chat_credit`:
+
+- `barter_credit`: success rate 0.75; mean credit proposals 1.5; **credit accepts 0.0**
+- `barter_chat_credit`: success rate 0.44; mean credit proposals 11.5; **credit accepts 0.0**; mean messages sent 26
+
+In this regime, chat makes agents propose credits far more often, but **still does not produce any accepted credit**, so we still do not see emergent money. It can also reduce clearing performance by consuming the per‑round action budget on messaging rather than trading.
 
 ## Exchange complexity note
 
