@@ -105,6 +105,12 @@ At $N=8$ (2 seeds, round cap 12), comparing `barter_credit` vs `barter_chat_cred
 
 In this regime, chat makes agents propose credits far more often, but **still does not produce any accepted credit**, so we still do not see emergent money. It can also reduce clearing performance by consuming the per‑round action budget on messaging rather than trading.
 
+Qualitative notes from the chat logs:
+
+- Chat is used mostly for “please accept proposal mX” reminders and “who has gY?” queries, not for establishing shared credit/reputation conventions.
+- Credits are presented as sweeteners/bribes (“I’ll add IOU c1”), but counterparties do not accept them in this setting.
+- Some agents appear to hallucinate “bundles” by writing composite strings like `g5+c1` in `give`. The environment treats any non‑`g*` string as a single token label (not a bundle), so these offers do **not** actually include `g5` unless separately traded.
+
 ## Exchange complexity note
 
 Money/Exchange runs log per‑round exchange traffic and price updates. In the $N=8$ run, the exchange handled 23 inbound and 23 outbound messages total and prices stayed fixed (no updates), illustrating that coordination is absorbed into $O(N)$ hub-facing communication in this toy.
