@@ -11,6 +11,8 @@ from dotenv import load_dotenv
 
 from .llm_client import LLMClient
 from .simulation import (
+    BarterChatCreditSimulation,
+    BarterChatSimulation,
     BarterSimulation,
     BarterWithCreditSimulation,
     BaseSimulation,
@@ -49,8 +51,26 @@ def run_experiment(
             llm_client=llm_client,
             model_name=model,
         )
+    elif condition == "barter_chat":
+        simulation = BarterChatSimulation(
+            n_agents=n,
+            rounds=rounds,
+            seed=seed,
+            history_limit=history_limit,
+            llm_client=llm_client,
+            model_name=model,
+        )
     elif condition == "barter_credit":
         simulation = BarterWithCreditSimulation(
+            n_agents=n,
+            rounds=rounds,
+            seed=seed,
+            history_limit=history_limit,
+            llm_client=llm_client,
+            model_name=model,
+        )
+    elif condition == "barter_chat_credit":
+        simulation = BarterChatCreditSimulation(
             n_agents=n,
             rounds=rounds,
             seed=seed,
@@ -106,7 +126,14 @@ def parse_args() -> argparse.Namespace:
     run_parser.add_argument(
         "--conditions",
         nargs="+",
-        choices=["barter", "barter_credit", "money_exchange", "central_planner"],
+        choices=[
+            "barter",
+            "barter_chat",
+            "barter_credit",
+            "barter_chat_credit",
+            "money_exchange",
+            "central_planner",
+        ],
         default=["barter", "money_exchange"],
         help="Which conditions to run.",
     )
@@ -157,7 +184,7 @@ def parse_args() -> argparse.Namespace:
     llm_parser = subparsers.add_parser("llm-live", help="Tiny live sanity check run.")
     llm_parser.add_argument(
         "--condition",
-        choices=["barter", "money_exchange"],
+        choices=["barter", "barter_chat", "barter_chat_credit", "money_exchange"],
         default="barter",
         help="Condition to run for the smoke test.",
     )

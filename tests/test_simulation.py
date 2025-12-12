@@ -5,6 +5,8 @@ from typing import Any, Dict
 
 from agentic_economy.llm_client import LLMClient
 from agentic_economy.simulation import (
+    BarterChatCreditSimulation,
+    BarterChatSimulation,
     BarterSimulation,
     BarterWithCreditSimulation,
     CentralPlannerSimulation,
@@ -163,6 +165,67 @@ def test_barter_credit_run_completes_trade() -> None:
     assert result.successful_agents == 2
     assert result.inventory_final["A0"].get("g1", 0) == 1
     assert result.inventory_final["A1"].get("g0", 0) == 1
+
+
+def test_barter_chat_sends_message() -> None:
+    script = {
+        "A0": [{"action": "send_message", "to": "A1", "message": "hi"}],
+        "A1": [{"action": "idle"}],
+    }
+    sim = BarterChatSimulation(
+        n_agents=2,
+        rounds=1,
+        seed=0,
+        history_limit=5,
+        llm_client=ScriptedBarterLLM(script),  # type: ignore[arg-type]
+        model_name="dummy",
+    )
+    result = sim.run()
+    assert any(msg.payload.get("action") == "send_message" for msg in result.messages)
+    assert result.behavior_summary is not None
+    assert result.behavior_summary["A0"]["messages_sent"] == 1
+
+
+def test_barter_logs_invalid_action() -> None:
+    script = {
+        "A0": [{"action": "propose_trade", "to": "A9", "give": "g0", "receive": "g1"}],
+        "A1": [{"action": "idle"}],
+    }
+    sim = BarterSimulation(
+        n_agents=2,
+        rounds=1,
+        seed=0,
+        history_limit=5,
+        llm_client=ScriptedBarterLLM(script),  # type: ignore[arg-type]
+        model_name="dummy",
+    )
+    result = sim.run()
+    assert result.events is not None
+    assert any(ev.get("event") == "invalid_action" for ev in result.events)
+
+
+def test_barter_chat_credit_issues_credit() -> None:
+    script = {
+        "A0": [
+            {"action": "propose_trade", "to": "A1", "give": "c1", "receive": "g1"},
+            {"action": "idle"},
+        ],
+        "A1": [
+            {"action": "idle"},
+            {"action": "accept", "of_message_id": "m0"},
+        ],
+    }
+    sim = BarterChatCreditSimulation(
+        n_agents=2,
+        rounds=2,
+        seed=0,
+        history_limit=5,
+        llm_client=ScriptedBarterLLM(script),  # type: ignore[arg-type]
+        model_name="dummy",
+    )
+    result = sim.run()
+    assert result.events is not None
+    assert any(ev.get("event") == "credit_issued" for ev in result.events)
 
 
 def test_money_exchange_round_trip() -> None:
