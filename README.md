@@ -1,4 +1,5 @@
 # Agentic economy experiment (barter vs money)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/strangeloopcanon/barter_to_money)
 
 ## Core question
 
