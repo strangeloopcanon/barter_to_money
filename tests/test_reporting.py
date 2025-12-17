@@ -32,6 +32,19 @@ def test_write_core_sweep_latex_table(tmp_path: Path) -> None:
     assert "Money/Exchange" in contents
 
 
+def test_generate_showcase_overview(tmp_path: Path) -> None:
+    all_df = pd.read_csv(Path("results/all_runs_aggregate.csv"))
+    outputs = reporting.generate_showcase_overview(
+        all_df, tmp_path, n_agents=8, rounds_cap=8, model="gpt-5-mini"
+    )
+
+    expected = {tmp_path / "showcase_overview.png", tmp_path / "showcase_overview.pdf"}
+    assert set(outputs) == expected
+    for path in outputs:
+        assert path.exists()
+        assert path.stat().st_size > 0
+
+
 def test_main_generates_outputs(tmp_path: Path, monkeypatch: Any) -> None:
     out_dir = tmp_path / "figures"
     paper_dir = tmp_path / "paper"
@@ -49,4 +62,6 @@ def test_main_generates_outputs(tmp_path: Path, monkeypatch: Any) -> None:
 
     assert (out_dir / "core_sweep_overview.png").exists()
     assert (out_dir / "core_sweep_overview.pdf").exists()
+    assert (out_dir / "showcase_overview.png").exists()
+    assert (out_dir / "showcase_overview.pdf").exists()
     assert (paper_dir / "core_sweep_table.tex").exists()
