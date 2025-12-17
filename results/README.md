@@ -24,3 +24,9 @@ To find specific variants in the “all runs” tables, search for:
 
 - Core sweep: `make results-core`
 - All runs: `make results-all`
+
+### Blog/paper assets
+
+- Core sweep overview figure: [PNG](figures/core_sweep_overview.png), [PDF](figures/core_sweep_overview.pdf)
+- Core sweep LaTeX table: [paper/core_sweep_table.tex](paper/core_sweep_table.tex)
+- Generate: `make figures-core`
