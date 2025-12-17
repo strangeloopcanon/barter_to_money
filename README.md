@@ -78,6 +78,8 @@ At $N=8$ with round cap $R=8$ (model `gpt-5-mini`):
 
 ![Showcase overview (success + rounds)](results/figures/showcase_overview.png)
 
+RHS panel: `rounds_run` is how many rounds the run lasted before termination; lower means the institution cleared faster, and values at the round cap mean it did not clear within the fixed budget.
+
 ### Core sweep (barter vs money/Exchange)
 
 To probe the core claim above without overfitting to any single random economy, we reran the two key institutions (barter vs money/Exchange) on **two independent economies** (seeds 0 and 1) across a small $N$ sweep under a fixed round cap $R=8$.
