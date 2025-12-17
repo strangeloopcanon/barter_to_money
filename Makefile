@@ -5,6 +5,7 @@ SECRETS_PATHS := src tests README.md pyproject.toml
 
 .PHONY: setup bootstrap format format-check lint types security secrets check test deps-audit llm-live all
 .PHONY: results-core results-all
+.PHONY: figures-core report
 
 setup: ## Install project and dev dependencies via uv
 	$(UV) sync
@@ -55,5 +56,10 @@ results-core: ## Generate full + aggregated tables for runs_core
 
 results-all: ## Generate full + aggregated tables for all local runs*
 	$(UV) run python -m agentic_economy.analysis --pattern 'runs*/*.json' --out-csv results/all_runs_full.csv --out-md results/all_runs_full.md --out-aggregate-csv results/all_runs_aggregate.csv --out-aggregate-md results/all_runs_aggregate.md
+
+figures-core: ## Generate blog/paper-friendly figures and LaTeX for core sweep
+	$(UV) run python -m agentic_economy.reporting --core-aggregate results/runs_core_aggregate.csv --out-dir results/figures --paper-dir results/paper
+
+report: figures-core ## Alias for figures-core
 
 all: check test ## Aggregate gate (add llm-live manually when needed)

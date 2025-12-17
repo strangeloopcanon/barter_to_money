@@ -82,6 +82,7 @@ Full per‑run and aggregated tables (clickable):
 - Index: [results/README.md](results/README.md)
 - Core sweep: [per-run](results/runs_core_full.md), [aggregated](results/runs_core_aggregate.md)
 - All recorded runs (incl. `central_planner`, `barter_credit`, `barter_chat_credit`): [per-run](results/all_runs_full.md), [aggregated](results/all_runs_aggregate.md)
+- Blog/paper assets: [core sweep figure (PNG)](results/figures/core_sweep_overview.png), [PDF](results/figures/core_sweep_overview.pdf), [LaTeX table](results/paper/core_sweep_table.tex)
 
 What this shows (current code, GPT‑5‑mini, fixed communication budget):
 
