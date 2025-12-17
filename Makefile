@@ -4,6 +4,7 @@ export PYTHONPATH := src
 SECRETS_PATHS := src tests README.md pyproject.toml
 
 .PHONY: setup bootstrap format format-check lint types security secrets check test deps-audit llm-live all
+.PHONY: results-core results-all
 
 setup: ## Install project and dev dependencies via uv
 	$(UV) sync
@@ -30,8 +31,12 @@ secrets: ## Detect secrets, creating baseline if missing
 		echo "Creating .secrets.baseline"; \
 		$(UV) run detect-secrets scan --all-files $(SECRETS_PATHS) > .secrets.baseline; \
 	else \
-		$(UV) run detect-secrets scan --all-files $(SECRETS_PATHS) > .secrets.scan.json; \
-		$(PYTHON) -c "import json,sys; from pathlib import Path; data=json.loads(Path('.secrets.scan.json').read_text()); results=data.get('results') or {}; print('Potential secrets detected; see .secrets.scan.json') if results else None; sys.exit(1 if results else 0)" && mv .secrets.scan.json .secrets.baseline; \
+		files=$$(git ls-files $(SECRETS_PATHS)); \
+		if [ -z "$$files" ]; then \
+			echo "No files matched for secret scanning"; \
+			exit 0; \
+		fi; \
+		$(UV) run detect-secrets-hook --baseline .secrets.baseline $$files; \
 	fi
 
 check: format-check lint types security secrets ## Format check, lint, types, security, secrets
@@ -44,5 +49,11 @@ deps-audit: ## Advisory dependency audit
 
 llm-live: ## Minimal live run to exercise LLM path
 	$(UV) run python -m agentic_economy.cli llm-live --rounds 2 --n 3
+
+results-core: ## Generate full + aggregated tables for runs_core
+	$(UV) run python -m agentic_economy.analysis --pattern 'runs_core/*.json' --out-csv results/runs_core_full.csv --out-md results/runs_core_full.md --out-aggregate-csv results/runs_core_aggregate.csv --out-aggregate-md results/runs_core_aggregate.md
+
+results-all: ## Generate full + aggregated tables for all local runs*
+	$(UV) run python -m agentic_economy.analysis --pattern 'runs*/*.json' --out-csv results/all_runs_full.csv --out-md results/all_runs_full.md --out-aggregate-csv results/all_runs_aggregate.csv --out-aggregate-md results/all_runs_aggregate.md
 
 all: check test ## Aggregate gate (add llm-live manually when needed)

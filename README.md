@@ -78,6 +78,11 @@ To probe the core claim above without overfitting to any single random economy, 
 | Money/Exchange | 10 | 2      | 8         | 1.00               | 4.0            |
 | Money/Exchange | 12 | 2      | 8         | 1.00               | 4.0            |
 
+Full per‑run and aggregated tables:
+- Index: `results/README.md`
+- Core sweep: `results/runs_core_full.md`, `results/runs_core_aggregate.md`
+- All recorded local runs (incl. `central_planner`, `barter_credit`, `barter_chat_credit`): `results/all_runs_full.md`, `results/all_runs_aggregate.md`
+
 What this shows (current code, GPT‑5‑mini, fixed communication budget):
 
 - **Barter:** success is already sensitive to the economy at $N=3$ and does not scale: by $N=12$ fewer than half the agents clear on average and runs hit the round cap.
@@ -91,6 +96,9 @@ To see whether money-like objects emerge endogenously, we ran `barter` vs `barte
 
 - `barter` success ≈ 0.50 (about 4/8 agents clear on average).
 - `barter_credit` success ≈ 0.54, but credits were almost never used (5 total credit proposals across 3 runs) and **no credit was accepted**, so no shared medium of exchange emerged in this regime.
+
+Full per‑run and aggregated tables for the credit runs: `results/all_runs_full.md` and
+`results/all_runs_aggregate.md` (run_sets `runs_5mini_emergent` and `runs_chat_credit_retest`).
 
 This is a preliminary negative result: simply allowing mintable IOUs is not enough for money to spontaneously appear without additional credibility or stronger coordination pressure.
 
