@@ -33,6 +33,7 @@ To find specific variants in the “all runs” tables, search for:
 
 ### Blog/paper assets
 
+- Showcase overview figure: [PNG](figures/showcase_overview.png), [PDF](figures/showcase_overview.pdf)
 - Core sweep overview figure: [PNG](figures/core_sweep_overview.png), [PDF](figures/core_sweep_overview.pdf)
 - Core sweep LaTeX table: [paper/core_sweep_table.tex](paper/core_sweep_table.tex)
 - Generate: `make figures-core`

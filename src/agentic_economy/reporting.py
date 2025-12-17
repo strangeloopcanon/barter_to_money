@@ -67,6 +67,41 @@ def _plot_line(
     )
 
 
+def _select_showcase_row(
+    df: pd.DataFrame,
+    *,
+    condition: str,
+    n_agents: int,
+    rounds_cap: int,
+    model: str,
+    preferred_run_sets: list[str],
+) -> pd.Series:
+    filtered = df[
+        (df["condition"] == condition)
+        & (df["n_agents"] == n_agents)
+        & (df["rounds_cap"] == rounds_cap)
+        & (df["model"] == model)
+    ].copy()
+
+    if filtered.empty:
+        raise ValueError(
+            "No aggregated rows found for showcase selection",
+            {
+                "condition": condition,
+                "n_agents": n_agents,
+                "rounds_cap": rounds_cap,
+                "model": model,
+            },
+        )
+
+    for run_set in preferred_run_sets:
+        match = filtered[filtered["run_set"] == run_set]
+        if not match.empty:
+            return match.sort_values("runs", ascending=False).iloc[0]
+
+    return filtered.sort_values("runs", ascending=False).iloc[0]
+
+
 def generate_core_sweep_overview(core_df: pd.DataFrame, out_dir: Path) -> list[Path]:
     required = [
         "condition",
@@ -178,6 +213,109 @@ def generate_core_sweep_overview(core_df: pd.DataFrame, out_dir: Path) -> list[P
     return [png_path, pdf_path]
 
 
+def generate_showcase_overview(
+    all_aggregate_df: pd.DataFrame,
+    out_dir: Path,
+    *,
+    n_agents: int,
+    rounds_cap: int,
+    model: str,
+) -> list[Path]:
+    required = [
+        "run_set",
+        "condition",
+        "n_agents",
+        "model",
+        "rounds_cap",
+        "runs",
+        "success_rate_mean",
+        "success_rate_std",
+        "rounds_run_mean",
+        "rounds_run_std",
+    ]
+    _required_columns(all_aggregate_df, required, "all_aggregate_df")
+
+    df = all_aggregate_df.copy()
+    selections: list[tuple[str, list[str]]] = [
+        ("barter", ["runs_core", "runs_5mini_emergent", "runs_5mini_full"]),
+        ("money_exchange", ["runs_core", "runs_5mini_full", "runs_5mini_smoke"]),
+        ("central_planner", ["runs_5mini_full", "runs_5mini_smoke"]),
+        ("barter_credit", ["runs_5mini_emergent", "runs_chat_credit_retest"]),
+    ]
+    rows = []
+    for condition, preferred_run_sets in selections:
+        row = _select_showcase_row(
+            df,
+            condition=condition,
+            n_agents=n_agents,
+            rounds_cap=rounds_cap,
+            model=model,
+            preferred_run_sets=preferred_run_sets,
+        )
+        rows.append(row)
+
+    showcase = pd.DataFrame(rows)
+    showcase["condition_label"] = showcase["condition"].map(_condition_label)
+    showcase = showcase.sort_values("condition_label")
+
+    try:
+        plt.style.use("seaborn-v0_8-colorblind")
+    except (OSError, ValueError):
+        plt.style.use("tableau-colorblind10")
+
+    fig, (ax_success, ax_rounds) = plt.subplots(1, 2, figsize=(10, 4), constrained_layout=True)
+
+    order = ["barter", "barter_credit", "central_planner", "money_exchange"]
+    showcase = (
+        showcase.set_index("condition")
+        .reindex(order)
+        .reset_index()
+        .rename(columns={"condition": "condition_id"})
+    )
+
+    labels = [str(_condition_label(c)) for c in showcase["condition_id"]]
+    x = range(len(labels))
+
+    success_mean = showcase["success_rate_mean"].astype(float).tolist()
+    success_std = (
+        showcase["success_rate_std"].fillna(0.0).astype(float).tolist()
+        if "success_rate_std" in showcase.columns
+        else [0.0] * len(labels)
+    )
+    rounds_mean = showcase["rounds_run_mean"].astype(float).tolist()
+    rounds_std = (
+        showcase["rounds_run_std"].fillna(0.0).astype(float).tolist()
+        if "rounds_run_std" in showcase.columns
+        else [0.0] * len(labels)
+    )
+
+    palette = ["#1f77b4", "#2ca02c", "#d62728", "#ff7f0e"]
+    ax_success.bar(x, success_mean, yerr=success_std, capsize=3, color=palette)
+    ax_success.set_title("Success rate (mean ± std)")
+    ax_success.set_ylabel("Success rate")
+    ax_success.set_ylim(-0.02, 1.02)
+    ax_success.set_xticks(list(x), labels, rotation=15, ha="right")
+    ax_success.grid(True, axis="y", alpha=0.25)
+
+    ax_rounds.bar(x, rounds_mean, yerr=rounds_std, capsize=3, color=palette)
+    ax_rounds.set_title("Rounds run (mean ± std)")
+    ax_rounds.set_ylabel("Rounds")
+    ax_rounds.set_ylim(0, max(rounds_cap, int(max(rounds_mean))) + 1)
+    ax_rounds.set_xticks(list(x), labels, rotation=15, ha="right")
+    ax_rounds.grid(True, axis="y", alpha=0.25)
+
+    fig.suptitle(f"Showcase results (N={n_agents}, round cap R={rounds_cap})", y=1.02)
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    png_path = out_dir / "showcase_overview.png"
+    pdf_path = out_dir / "showcase_overview.pdf"
+    fig.savefig(png_path, dpi=200, bbox_inches="tight")
+    fig.savefig(pdf_path, bbox_inches="tight")
+    plt.close(fig)
+
+    return [png_path, pdf_path]
+
+
 def write_core_sweep_latex_table(core_df: pd.DataFrame, out_path: Path) -> Path:
     required = [
         "condition",
@@ -249,6 +387,12 @@ def parse_args() -> argparse.Namespace:
         help="Path to core sweep aggregated CSV.",
     )
     parser.add_argument(
+        "--all-aggregate",
+        type=Path,
+        default=Path("results/all_runs_aggregate.csv"),
+        help="Path to all-runs aggregated CSV (used for showcase figures).",
+    )
+    parser.add_argument(
         "--out-dir",
         type=Path,
         default=Path("results/figures"),
@@ -259,6 +403,19 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("results/paper"),
         help="Directory to write paper artifacts (e.g., LaTeX tables).",
+    )
+    parser.add_argument("--showcase-n", type=int, default=8, help="N for the showcase figure.")
+    parser.add_argument(
+        "--showcase-rounds-cap",
+        type=int,
+        default=8,
+        help="Round cap R for the showcase figure.",
+    )
+    parser.add_argument(
+        "--showcase-model",
+        type=str,
+        default="gpt-5-mini",
+        help="Model name for the showcase figure.",
     )
     return parser.parse_args()
 
@@ -276,12 +433,24 @@ def main() -> None:
     created: list[Path] = []
     created.extend(generate_core_sweep_overview(core_df, args.out_dir))
     created.append(write_core_sweep_latex_table(core_df, args.paper_dir / "core_sweep_table.tex"))
+    if args.all_aggregate.exists():
+        all_df = pd.read_csv(args.all_aggregate)
+        created.extend(
+            generate_showcase_overview(
+                all_df,
+                args.out_dir,
+                n_agents=int(args.showcase_n),
+                rounds_cap=int(args.showcase_rounds_cap),
+                model=str(args.showcase_model),
+            )
+        )
 
     logging.info(
         json.dumps(
             {
                 "event": "report_generated",
                 "core_aggregate": str(core_path),
+                "all_aggregate": str(args.all_aggregate) if args.all_aggregate.exists() else None,
                 "outputs": [str(path) for path in created],
             }
         )

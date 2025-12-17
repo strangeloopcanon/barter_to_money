@@ -61,7 +61,24 @@ Run logs now also include:
 - `events`: structured per‑round instrumentation of raw agent actions (including invalid/hallucinated actions), proposals, trades, credit issuance, and chat messages.
 - `behavior_summary`: per‑agent counts of proposals, unique partners, repeated identical proposals, chat messages sent, and invalid actions.
 
-## Empirical test (GPT-5-mini, core sweep)
+## Empirical results (GPT-5-mini)
+
+### Results at a glance (showcase)
+
+This is the curated 4-condition summary table intended for the writeup (see `results/showcase.md` for the canonical version).
+
+At $N=8$ with round cap $R=8$ (model `gpt-5-mini`):
+
+| Condition       | run_set           | runs | Success rate (mean ± std) | Rounds run (mean ± std) | Total messages (mean ± std) |
+|----------------|-------------------|------|----------------------------|--------------------------|-----------------------------|
+| Barter         | runs_core         | 2    | 0.625 ± 0.177              | 8.00 ± 0.00              | 32.0 ± 4.2                  |
+| Money/Exchange | runs_core         | 2    | 1.000 ± 0.000              | 3.50 ± 0.71              | 47.0 ± 1.4                  |
+| Central planner | runs_5mini_full   | 1    | 0.000                      | 8.00                     | 72.0                        |
+| Barter + credits | runs_5mini_emergent | 3 | 0.542 ± 0.072              | 8.00 ± 0.00              | 34.7 ± 4.2                  |
+
+![Showcase overview (success + rounds)](results/figures/showcase_overview.png)
+
+### Core sweep (barter vs money/Exchange)
 
 To probe the core claim above without overfitting to any single random economy, we reran the two key institutions (barter vs money/Exchange) on **two independent economies** (seeds 0 and 1) across a small $N$ sweep under a fixed round cap $R=8$.
 
@@ -83,7 +100,7 @@ Full per‑run and aggregated tables (clickable):
 - One-page views: [all results](results/all_results.md), [showcase table](results/showcase.md)
 - Core sweep: [per-run](results/runs_core_full.md), [aggregated](results/runs_core_aggregate.md)
 - All recorded runs (incl. `central_planner`, `barter_credit`, `barter_chat_credit`): [per-run](results/all_runs_full.md), [aggregated](results/all_runs_aggregate.md)
-- Blog/paper assets: [core sweep figure (PNG)](results/figures/core_sweep_overview.png), [PDF](results/figures/core_sweep_overview.pdf), [LaTeX table](results/paper/core_sweep_table.tex)
+- Blog/paper assets: [showcase figure (PNG)](results/figures/showcase_overview.png), [PDF](results/figures/showcase_overview.pdf), [core sweep figure (PNG)](results/figures/core_sweep_overview.png), [PDF](results/figures/core_sweep_overview.pdf), [LaTeX table](results/paper/core_sweep_table.tex)
 
 What this shows (current code, GPT‑5‑mini, fixed communication budget):
 
