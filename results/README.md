@@ -7,13 +7,13 @@ Key idea: `run_set` in the tables is just the folder name the JSON came from (e.
 
 ### Core sweep (barter vs money/Exchange)
 
-- Per-run: `results/runs_core_full.md`
-- Aggregated: `results/runs_core_aggregate.md`
+- Per-run: [runs_core_full.md](runs_core_full.md)
+- Aggregated: [runs_core_aggregate.md](runs_core_aggregate.md)
 
 ### All recorded runs (includes planner + credits)
 
-- Per-run: `results/all_runs_full.md`
-- Aggregated: `results/all_runs_aggregate.md`
+- Per-run: [all_runs_full.md](all_runs_full.md)
+- Aggregated: [all_runs_aggregate.md](all_runs_aggregate.md)
 
 To find specific variants in the “all runs” tables, search for:
 
@@ -24,4 +24,3 @@ To find specific variants in the “all runs” tables, search for:
 
 - Core sweep: `make results-core`
 - All runs: `make results-all`
-
