@@ -5,6 +5,7 @@ This is the curated 4-condition summary table intended for the writeup. It selec
 - Source: `results/all_runs_aggregate.csv`
 - N = 8, R = 8, model = `gpt-5-mini`
 - LaTeX version: `results/paper/showcase_table.tex`
+- Note: `rounds_run` is rounds until termination (clearing or hitting the round cap); lower is better.
 
 | condition | run_set | runs | success_rate | rounds_run | total_messages | unique_pairs | credit_accepts |
 | --- | --- | --- | --- | --- | --- | --- | --- |

@@ -180,7 +180,7 @@ def generate_core_sweep_overview(core_df: pd.DataFrame, out_dir: Path) -> list[P
     ax_success.set_xticks(n_values)
     ax_success.grid(True, alpha=0.25)
 
-    ax_rounds.set_title("Rounds run (mean ± std)")
+    ax_rounds.set_title(f"Rounds to clear or cap (mean ± std)\n(round cap R={rounds_cap})")
     ax_rounds.set_xlabel("N agents")
     ax_rounds.set_ylabel("Rounds")
     ax_rounds.set_ylim(0, max(rounds_cap, int(df["rounds_run_mean"].max())) + 1)
@@ -298,7 +298,7 @@ def generate_showcase_overview(
     ax_success.grid(True, axis="y", alpha=0.25)
 
     ax_rounds.bar(x, rounds_mean, yerr=rounds_std, capsize=3, color=palette)
-    ax_rounds.set_title("Rounds run (mean ± std)")
+    ax_rounds.set_title(f"Rounds to clear or cap (mean ± std)\n(round cap R={rounds_cap})")
     ax_rounds.set_ylabel("Rounds")
     ax_rounds.set_ylim(0, max(rounds_cap, int(max(rounds_mean))) + 1)
     ax_rounds.set_xticks(list(x), labels, rotation=15, ha="right")
