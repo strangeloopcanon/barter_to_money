@@ -1,6 +1,8 @@
 # Agentic economy experiment (barter vs money)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/strangeloopcanon/barter_to_money)
 
+So what: with a fixed per‑agent communication budget, fully bilateral barter scales like ~$N^2$ pairwise search/negotiation, while a hub with a fungible token collapses coordination to ~$N$ hub‑facing interactions and can clear more reliably.
+
 ## Core question
 
 In an agentic economy where many LLM agents trade with each other, do we still “need” money (or some hub/hierarchy), or can everyone just negotiate directly via barter?
@@ -11,12 +13,44 @@ The thesis we want to test empirically is:
 - Under a fixed communication budget (limited rounds/messages), this bilateral search/negotiation burden makes it hard to clear markets via pure barter.
 - Introducing a hub with a token (a money/clearing-house agent) collapses the communication graph into a star: each agent only needs to talk to the hub, and coordination load scales roughly linearly in $N$.
 
-An informal theoretical claim behind this is:
+A slightly more formal model and communication‑complexity sketch live in `theory.md`.
 
-- Under random endowments and targets, and a fixed per-agent communication budget (round cap $R$ that does not grow with $N$), the probability that a purely bilateral protocol (or a local hierarchy without a token) fully clears the market goes to 0 as $N \to \infty$.
-- A star-shaped institution with a fungible token (money/Exchange) can, in contrast, keep success probability bounded away from 0 while using only $O(N)$ messages (roughly “sell once, buy once” per agent).
+## Repo map
 
-This repo implements a small, laptop-scale simulation of that contrast using OpenAI’s Responses API and GPT-5-mini class models. A slightly more formal model and communication-complexity sketch live in `theory.md`.
+- `src/agentic_economy/`: simulator + CLI (`agentic-economy`)
+- `runs*/`: raw JSON run logs (gitignored)
+- `results/`: generated tables/figures tracked in git ([results/README.md](results/README.md))
+
+## Running
+
+<details>
+<summary>Setup</summary>
+
+- Requirements: Python 3.11+, `uv`
+- Install deps: `make setup`
+- Auth: put `OPENAI_API_KEY=...` in `.env` (loaded via `python-dotenv`)
+
+</details>
+
+<details>
+<summary>Quick live smoke test</summary>
+
+- `make llm-live`
+
+</details>
+
+<details>
+<summary>Run experiments + generate tables</summary>
+
+- Explore CLI options: `agentic-economy --help`
+- Run a sweep (writes JSON under a gitignored folder):
+  - `agentic-economy run --conditions barter money_exchange --n 3 5 8 --seeds 2 --rounds 8 --model gpt-5-mini --output-dir runs_core`
+- Generate Markdown/CSV tables from local `runs*/` JSON:
+  - `make results-core` / `make results-all` / `make results-pages`
+
+Note: the CLI defaults to `gpt-5-mini` (matching the published tables under `results/`); override with `--model` as needed.
+
+</details>
 
 ## Experimental setup
 
@@ -43,105 +77,39 @@ We run several institutional variants over the *same* agent population and prefe
 
 2) **Money/Exchange (hub with a token)**: agents trade only with an Exchange hub using a fungible token and near‑stable posted prices (suggested strategy: sell endowment, buy target).
 
-3) **Central planner / pure hierarchy (local, no token)**: agents report inventory and targets to a planner that can only execute obvious pairwise swaps; it does not solve global cycles. Empirically this often fails to clear where money/Exchange clears.
+3) **Central planner / pure hierarchy (local, no token)**: agents report inventory and targets to a planner that can only execute obvious pairwise swaps; it does not solve global cycles.
 
 4) **Barter with credits (experimental)**: barter plus mintable/transferable IOU labels (any non‑`g*` string) that can circulate as tokens.
 
 5) **Barter with chat (experimental)**: like barter, but agents may send short free‑text coordination messages via `send_message` in addition to trade actions.
 
-6) **Barter with chat + credits (experimental)**: chat-enabled barter plus mintable credits. This is the intended setting for stronger “emergent money / reputation” probes.
+6) **Barter with chat + credits (experimental)**: chat-enabled barter plus mintable credits (an “emergent money / reputation” probe).
 
-Across conditions, agents are identical GPT‑5‑mini models; only the institution changes.
+Across conditions in a given run, agents are identical models; only the institution changes.
 
 ### Metrics
 
 Per run we track: `success_rate` (agents reaching targets), `rounds_run` (to clear or cap), and basic communication volume (`total_messages`, `unique_pairs`). Money/Exchange runs also log per‑round exchange traffic and price updates.
 
-Run logs now also include:
-- `events`: structured per‑round instrumentation of raw agent actions (including invalid/hallucinated actions), proposals, trades, credit issuance, and chat messages.
+Run logs include:
+
+- `events`: per‑round instrumentation of raw agent actions (including invalid/hallucinated actions), proposals, trades, credit issuance, and chat messages.
 - `behavior_summary`: per‑agent counts of proposals, unique partners, repeated identical proposals, chat messages sent, and invalid actions.
 
-## Empirical results (GPT-5-mini)
+## Results
 
-### Results at a glance (showcase)
+Curated showcase (see `results/showcase.md` for the canonical version; regenerate with `make results-pages`):
 
-This is the curated 4-condition summary table intended for the writeup (see `results/showcase.md` for the canonical version).
+![Showcase overview](results/figures/showcase_overview.png)
 
-At $N=8$ with round cap $R=8$ (model `gpt-5-mini`):
+| condition | run_set | runs | success_rate | rounds_run | total_messages | unique_pairs | credit_accepts |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Barter | runs_core | 2 | 0.625 ± 0.177 | 8.00 ± 0.00 | 32.0 ± 4.2 | 9.50 ± 2.12 | 0.00 ± 0.00 |
+| Money/Exchange | runs_core | 2 | 1.000 ± 0.000 | 3.50 ± 0.71 | 47.0 ± 1.4 | 8.00 ± 0.00 | 0.00 ± 0.00 |
+| Central planner | runs_5mini_full | 1 | 0.000 | 8.00 | 72.0 | 8.00 | 0.00 |
+| Barter + credits | runs_5mini_emergent | 3 | 0.542 ± 0.072 | 8.00 ± 0.00 | 34.7 ± 4.2 | 8.67 ± 1.53 | 0.00 ± 0.00 |
 
-| Condition       | run_set           | runs | Success rate (mean ± std) | Rounds run (mean ± std) | Total messages (mean ± std) |
-|----------------|-------------------|------|----------------------------|--------------------------|-----------------------------|
-| Barter         | runs_core         | 2    | 0.625 ± 0.177              | 8.00 ± 0.00              | 32.0 ± 4.2                  |
-| Money/Exchange | runs_core         | 2    | 1.000 ± 0.000              | 3.50 ± 0.71              | 47.0 ± 1.4                  |
-| Central planner | runs_5mini_full   | 1    | 0.000                      | 8.00                     | 72.0                        |
-| Barter + credits | runs_5mini_emergent | 3 | 0.542 ± 0.072              | 8.00 ± 0.00              | 34.7 ± 4.2                  |
+More results + regeneration commands:
 
-![Showcase overview (success + rounds)](results/figures/showcase_overview.png)
-
-RHS panel: `rounds_run` is how many rounds the run lasted before termination; lower means the institution cleared faster, and values at the round cap mean it did not clear within the fixed budget.
-
-### Core sweep (barter vs money/Exchange)
-
-To probe the core claim above without overfitting to any single random economy, we reran the two key institutions (barter vs money/Exchange) on **two independent economies** (seeds 0 and 1) across a small $N$ sweep under a fixed round cap $R=8$.
-
-| Condition      | N  | # runs | Round cap | Success rate (avg) | Avg rounds run |
-|----------------|----|--------|-----------|--------------------|----------------|
-| Barter         | 3  | 2      | 8         | 0.67               | 6.5            |
-| Barter         | 5  | 2      | 8         | 0.80               | 6.5            |
-| Barter         | 8  | 2      | 8         | 0.63               | 8.0            |
-| Barter         | 10 | 2      | 8         | 0.65               | 8.0            |
-| Barter         | 12 | 2      | 8         | 0.42               | 8.0            |
-| Money/Exchange | 3  | 2      | 8         | 1.00               | 3.5            |
-| Money/Exchange | 5  | 2      | 8         | 1.00               | 3.5            |
-| Money/Exchange | 8  | 2      | 8         | 1.00               | 3.5            |
-| Money/Exchange | 10 | 2      | 8         | 1.00               | 4.0            |
-| Money/Exchange | 12 | 2      | 8         | 1.00               | 4.0            |
-
-Full per‑run and aggregated tables (clickable):
 - Index: [results/README.md](results/README.md)
-- One-page views: [all results](results/all_results.md), [showcase table](results/showcase.md)
-- Core sweep: [per-run](results/runs_core_full.md), [aggregated](results/runs_core_aggregate.md)
-- All recorded runs (incl. `central_planner`, `barter_credit`, `barter_chat_credit`): [per-run](results/all_runs_full.md), [aggregated](results/all_runs_aggregate.md)
-- Blog/paper assets: [showcase figure (PNG)](results/figures/showcase_overview.png), [PDF](results/figures/showcase_overview.pdf), [core sweep figure (PNG)](results/figures/core_sweep_overview.png), [PDF](results/figures/core_sweep_overview.pdf), [LaTeX table](results/paper/core_sweep_table.tex)
-
-What this shows (current code, GPT‑5‑mini, fixed communication budget):
-
-- **Barter:** success is already sensitive to the economy at $N=3$ and does not scale: by $N=12$ fewer than half the agents clear on average and runs hit the round cap.
-- **Money/Exchange:** clears at 1.0 for all tested $N$ with roughly constant rounds (≈3–4) and linear hub‑facing communication.
-
-This is the qualitative pattern predicted by the communication‑complexity sketch: under fixed per‑agent communication, bilateral barter fails with high probability as $N$ grows, while a star‑shaped institution with a fungible token maintains high clearing probability.
-
-## Emergent money probe (barter_credit)
-
-To see whether money-like objects emerge endogenously, we ran `barter` vs `barter_credit` at $N=8$ (3 seeds, round cap 8). Results:
-
-- `barter` success ≈ 0.50 (about 4/8 agents clear on average).
-- `barter_credit` success ≈ 0.54, but credits were almost never used (5 total credit proposals across 3 runs) and **no credit was accepted**, so no shared medium of exchange emerged in this regime.
-
-Full per‑run and aggregated tables for the credit runs:
-[results/all_runs_full.md](results/all_runs_full.md) and
-[results/all_runs_aggregate.md](results/all_runs_aggregate.md)
-(run_sets `runs_5mini_emergent` and `runs_chat_credit_retest`).
-
-This is a preliminary negative result: simply allowing mintable IOUs is not enough for money to spontaneously appear without additional credibility or stronger coordination pressure.
-
-### Retest with chat + credits (barter_chat_credit)
-
-We reran the credits condition with an explicit coordination channel (`send_message`) so agents can negotiate credit semantics.
-
-At $N=8$ (2 seeds, round cap 12), comparing `barter_credit` vs `barter_chat_credit`:
-
-- `barter_credit`: success rate 0.75; mean credit proposals 1.5; **credit accepts 0.0**
-- `barter_chat_credit`: success rate 0.44; mean credit proposals 11.5; **credit accepts 0.0**; mean messages sent 26
-
-In this regime, chat makes agents propose credits far more often, but **still does not produce any accepted credit**, so we still do not see emergent money. It can also reduce clearing performance by consuming the per‑round action budget on messaging rather than trading.
-
-Qualitative notes from the chat logs:
-
-- Chat is used mostly for “please accept proposal mX” reminders and “who has gY?” queries, not for establishing shared credit/reputation conventions.
-- Credits are presented as sweeteners/bribes (“I’ll add IOU c1”), but counterparties do not accept them in this setting.
-- Some agents appear to hallucinate “bundles” by writing composite strings like `g5+c1` in `give`. The environment treats any non‑`g*` string as a single token label (not a bundle), so these offers do **not** actually include `g5` unless separately traded.
-
-## Exchange complexity note
-
-Money/Exchange runs log per‑round exchange traffic and price updates. In the $N=8$ run, the exchange handled 23 inbound and 23 outbound messages total and prices stayed fixed (no updates), illustrating that coordination is absorbed into $O(N)$ hub-facing communication in this toy.
+- One-page views: [results/all_results.md](results/all_results.md), [results/showcase.md](results/showcase.md)

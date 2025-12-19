@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class LLMClient:
     def __init__(
         self,
-        model: str = "gpt-5-nano",
+        model: str = "gpt-5-mini",
         max_retries: int = 2,
         retry_delay: float = 1.0,
         client: Optional[Any] = None,
