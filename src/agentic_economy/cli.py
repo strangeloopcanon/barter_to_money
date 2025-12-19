@@ -21,6 +21,7 @@ from .simulation import (
 )
 
 DEFAULT_N_VALUES = [3, 5, 7]
+DEFAULT_MODEL = "gpt-5-mini"
 
 
 def configure_logging(verbose: bool = False) -> None:
@@ -166,7 +167,7 @@ def parse_args() -> argparse.Namespace:
     run_parser.add_argument(
         "--model",
         type=str,
-        default="gpt-5-nano",
+        default=DEFAULT_MODEL,
         help="Model name for responses API.",
     )
     run_parser.add_argument(
@@ -200,7 +201,7 @@ def parse_args() -> argparse.Namespace:
     llm_parser.add_argument(
         "--model",
         type=str,
-        default="gpt-5-nano",
+        default=DEFAULT_MODEL,
         help="Model name for responses API.",
     )
     llm_parser.add_argument(

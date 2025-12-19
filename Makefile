@@ -50,7 +50,7 @@ deps-audit: ## Advisory dependency audit
 	$(UV) run pip-audit
 
 llm-live: ## Minimal live run to exercise LLM path
-	$(UV) run python -m agentic_economy.cli llm-live --rounds 2 --n 3
+	$(UV) run python -m agentic_economy.cli llm-live --rounds 2 --n 3 --model gpt-5-mini
 
 results-core: ## Generate full + aggregated tables for runs_core
 	$(UV) run python -m agentic_economy.analysis --pattern 'runs_core/*.json' --out-csv results/runs_core_full.csv --out-md results/runs_core_full.md --out-aggregate-csv results/runs_core_aggregate.csv --out-aggregate-md results/runs_core_aggregate.md
